@@ -2,7 +2,7 @@ SHELL := /bin/bash
 SCRIPTS_DIR := scripts
 SCHEMAS_DIR := schemas
 
-.PHONY: help lint typecheck validate-schemas validate-models init run-step redact validate commit-run test smoke ci ipk clean
+.PHONY: help lint typecheck validate-schemas validate-models init run-step redact validate commit-run test smoke ci ipk clean nostr-key nostr-publish-issue nostr-update-status nostr-query-board nostr-query-issue nostr-relays nostr-verify
 
 help: ## Show this help
 	@echo "Usage: make [target] [ARGS='...']"
@@ -98,3 +98,53 @@ clean: ## Remove .tmp files from runs/
 	@echo "Cleaning .tmp directories..."
 	@find runs/ -type d -name '.tmp' -exec rm -rf {} + 2>/dev/null || true
 	@echo "Done."
+
+## ─── Nostr / NIP-34 targets (nak CLI) ───────────────────────────
+## Requires: ~/.local/bin/nak and NOSTR_SECRET_KEY env var (hex)
+NAK ?= ~/.local/bin/nak
+RELAYS ?= wss://relay.damus.io wss://nos.lol
+SEC ?= $(NOSTR_SECRET_KEY)
+BOARD_ID ?= net4sats-mvp-board
+PUBKEY ?= e18a1d171a59d874edd336472afeb3a614d3dc83397dd097e922a99dcee02133
+
+nostr-key: ## Show the npub for the configured secret key
+	@if [ -z "$(SEC)" ]; then echo "ERROR: Set NOSTR_SECRET_KEY env var"; exit 1; fi
+	@$(NAK) key public --sec "$(SEC)"
+
+nostr-publish-issue: ## Publish a NIP-34 issue. Usage: make nostr-publish-issue title="Bug" body="Description"
+	@if [ -z "$(SEC)" ]; then echo "ERROR: Set NOSTR_SECRET_KEY env var"; exit 1; fi
+	@if [ -z "$(title)" ]; then echo "ERROR: title=... required"; exit 1; fi
+	@$(NAK) event --sec "$(SEC)" -k 30311 \
+		-c "$(if $(body),$(body),No description provided)" \
+		-d "$(BOARD_ID)" \
+		-t "title=$(title)" \
+		-t "status=open" \
+		$(RELAYS)
+
+nostr-update-status: ## Update issue status. Usage: make nostr-update-status id="event-id" status="closed"
+	@if [ -z "$(SEC)" ]; then echo "ERROR: Set NOSTR_SECRET_KEY env var"; exit 1; fi
+	@if [ -z "$(id)" ] || [ -z "$(status)" ]; then echo "ERROR: id=... and status=... required"; exit 1; fi
+	@$(NAK) event --sec "$(SEC)" -k 30311 \
+		-c "Status update: $(status)" \
+		-e "$(id)" \
+		-t "status=$(status)" \
+		$(RELAYS)
+
+nostr-query-board: ## Fetch all board events from relays
+	@echo "Querying board $(BOARD_ID) for pubkey $(PUBKEY)..."
+	@$(NAK) req -a $(PUBKEY) -k 30311 -l 50 $(RELAYS)
+
+nostr-query-issue: ## Fetch a specific issue. Usage: make nostr-query-issue id="event-id"
+	@if [ -z "$(id)" ]; then echo "ERROR: id=... required"; exit 1; fi
+	@$(NAK) fetch $(id) $(RELAYS)
+
+nostr-relays: ## Check relay connectivity
+	@for r in $(RELAYS); do \
+		echo -n "$$r: "; \
+		$(NAK) relay "$$r" 2>&1 | head -1 || echo "FAILED"; \
+	done
+
+nostr-verify: ## Verify an event signature from stdin
+	@$(NAK) verify
+
+.PHONY: nostr-key nostr-publish-issue nostr-update-status nostr-query-board nostr-query-issue nostr-relays nostr-verify
