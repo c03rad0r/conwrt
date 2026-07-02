@@ -43,6 +43,12 @@
   .permalink { font-size: 0.78rem; color: #666; margin: 0.4rem 0 0.8rem; word-break: break-all; }
   .empty { color: #999; font-style: italic; padding: 14px; }
   .warn { background: #fff3cd; color: #856404; padding: 8px 12px; border-radius: 4px; font-size: 0.8rem; margin-bottom: 1rem; }
+  .discover-note { font-size: 0.78rem; color: #666; margin: 0.3rem 0 0.3rem; }
+  .discover-cmd { background: #f0f3f7; border: 1px solid #e0e0e0; border-radius: 4px; padding: 6px 9px; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.75rem; color: #0366d6; margin-bottom: 0.5rem; white-space: pre-wrap; word-break: break-all; }
+  #discover-json { width: 100%; padding: 7px 9px; font-size: 0.78rem; font-family: 'SF Mono', Menlo, Consolas, monospace; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+  .discover-detail { font-size: 0.78rem; color: #555; margin-top: 0.5rem; line-height: 1.5; }
+  .discover-detail code { background: #eee; padding: 1px 5px; border-radius: 3px; font-size: 0.76rem; }
+  .discover-detail .likely { color: #1a7f37; font-weight: 600; }
   footer { margin-top: 2rem; color: #999; font-size: 0.78rem; }
   a { color: #0366d6; }
 </style>
@@ -63,6 +69,22 @@
 <p class="subtitle">Search your router, pick a feature, stack any add-ons, and copy the exact shell script or step-by-step instructions conwrt would run. Shareable via URL. Same source of truth as the CLI — no drift.</p>
 
 <div id="load-warn" class="warn" style="display:none"></div>
+
+<div class="panel" id="discover-panel">
+  <label>Discovered on your network <span class="desc">(optional — auto-fill from a live scan)</span></label>
+  <p class="discover-note">Run a subnet scan on a machine connected to the router's LAN, then paste the JSON here:</p>
+  <pre class="discover-cmd">python3 scripts/conwrt discover --json   # or: conwrt discover --json</pre>
+  <textarea id="discover-json" rows="4" placeholder='Paste JSON array here, e.g. [{"ip":"192.168.1.1","mac":"d8:5d:84:11:22:33","vendor":"ZyXEL","open_ports":[22,80],"likely_router":true,"model_hints":["zyxel-gs1900-8hp-v1"]}]' spellcheck="false"></textarea>
+  <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center">
+    <button type="button" class="tab" id="discover-load" style="border-radius:4px;background:#0366d6;color:#fff">Load scan</button>
+    <span id="discover-status" class="desc"></span>
+  </div>
+  <div id="discover-select-wrap" style="margin-top:0.6rem;display:none">
+    <label>Pick a detected router</label>
+    <select id="discovered-select"><option value="">— select —</option></select>
+    <div id="discovered-detail" class="discover-detail"></div>
+  </div>
+</div>
 
 <div class="panel">
   <label>Router</label>
@@ -103,6 +125,93 @@
 <script>
 let BUNDLE = null;
 let state = { model: "", flow: "", version: "", output: "shell", addons: [] };
+let discoveredRouters = [];
+
+// ---- Discovered-routers dropdown (paste `conwrt discover --json` output) ----
+function loadDiscovered() {
+  const ta = document.getElementById("discover-json");
+  const status = document.getElementById("discover-status");
+  const wrap = document.getElementById("discover-select-wrap");
+  const sel = document.getElementById("discovered-select");
+  const detail = document.getElementById("discovered-detail");
+  detail.innerHTML = "";
+  let arr;
+  try {
+    const txt = (ta.value || "").trim();
+    if (!txt) throw new Error("paste JSON first");
+    // tolerate a single object wrapped instead of an array
+    const parsed = JSON.parse(txt);
+    arr = Array.isArray(parsed) ? parsed : [parsed];
+  } catch (e) {
+    status.innerHTML = '<span style="color:#c0392b">Invalid JSON: ' + (e.message || e) + "</span>";
+    wrap.style.display = "none";
+    return;
+  }
+  // Only keep objects with an ip; prefer likely routers first, then by score.
+  const routers = arr.filter(r => r && (r.ip || r.label))
+    .sort((a, b) => (b.router_score || 0) - (a.router_score || 0));
+  if (!routers.length) {
+    status.innerHTML = '<span style="color:#c0392b">No hosts in JSON.</span>';
+    wrap.style.display = "none";
+    return;
+  }
+  discoveredRouters = routers;
+  sel.innerHTML = '<option value="">— select —</option>';
+  routers.forEach((r, i) => {
+    const o = document.createElement("option");
+    o.value = String(i);
+    const vendor = r.vendor || r.mac_vendor || "";
+    const ports = (r.open_ports || []).join("/");
+    const star = r.likely_router ? "★ " : "";
+    o.textContent = `${star}${r.ip || r.label}${vendor ? "  " + vendor : ""}${ports ? "  :" + ports : ""}`;
+    sel.appendChild(o);
+  });
+  const nLikely = routers.filter(r => r.likely_router).length;
+  status.innerHTML = `<span style="color:#1a7f37">Loaded ${routers.length} host(s) — ${nLikely} likely router(s).</span>`;
+  wrap.style.display = "block";
+}
+
+function pickDiscovered(idx) {
+  const detail = document.getElementById("discovered-detail");
+  if (idx === "" || idx == null || !discoveredRouters[idx]) { detail.innerHTML = ""; return; }
+  const r = discoveredRouters[idx];
+  const bits = [];
+  if (r.ip) bits.push(`IP <code>${r.ip}</code>`);
+  if (r.mac) bits.push(`MAC <code>${r.mac}</code>`);
+  if (r.vendor) bits.push(`vendor <code>${r.vendor}</code>`);
+  if (r.open_ports && r.open_ports.length) bits.push(`ports <code>${r.open_ports.join("/")}</code>`);
+  let html = bits.join(" · ");
+  if (r.likely_router) html += ' <span class="likely">likely router</span>';
+  if (r.ssh_banner) html += `<br>SSH: <code>${escapeHtml(r.ssh_banner)}</code>`;
+  if (r.http_title) html += `<br>HTTP title: <code>${escapeHtml(r.http_title)}</code>`;
+  detail.innerHTML = html;
+  // Try to auto-select a matching model from the bundle.
+  const matched = matchDiscoveredModel(r);
+  if (matched && typeof window.selectModel === "function") window.selectModel(matched.id);
+}
+
+function matchDiscoveredModel(r) {
+  if (!BUNDLE || !BUNDLE.models) return null;
+  // 1. explicit model_hints from the scan (MAC-OUI based)
+  if (Array.isArray(r.model_hints)) {
+    for (const h of r.model_hints) {
+      const m = BUNDLE.models.find(x => x.id === h);
+      if (m) return m;
+    }
+  }
+  // 2. vendor token match against model vendor/description/id
+  const vendor = (r.vendor || "").toLowerCase();
+  if (vendor) {
+    const tok = vendor.split(/[\s,.-]+/).filter(t => t.length >= 3 && !["inc", "ltd", "corp", "co", "technology", "electronics"].includes(t))[0];
+    if (tok) {
+      const byVendor = BUNDLE.models.find(x => (x.vendor || "").toLowerCase().includes(tok) || (x.id || "").toLowerCase().includes(tok));
+      if (byVendor) return byVendor;
+    }
+  }
+  return null;
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 async function init() {
   try {
@@ -286,6 +395,10 @@ function applyUrlState() {
 function renderAll() { renderFlowParams(); renderAddons(); update(); }
 
 function wireEvents() {
+  // Discovered-routers panel: load JSON + dropdown
+  document.getElementById("discover-load").addEventListener("click", loadDiscovered);
+  document.getElementById("discovered-select").addEventListener("change", (e) => pickDiscovered(e.target.value));
+
   const search = document.getElementById("model-search");
   const list = document.getElementById("model-list");
   function showList(q) {

@@ -390,8 +390,38 @@ def action_help() -> None:
     print(dim("Use the CLI (python3 scripts/conwrt.py) for real operations."))
 
 
+def action_discover() -> None:
+    """Item 6 -- active subnet scan (nmap + ARP + MAC OUI)."""
+    header("Scan Subnet for Routers")
+    warning("Runs an nmap ARP scan of your local subnet (~10-30s).")
+    warning("Detects routers/switches/APs by open SSH/HTTP ports + MAC vendor.\n")
+
+    try:
+        confirm = input("Start subnet scan? [Y/n]: ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print("\nInterrupted.")
+        return
+    if confirm in ("n", "no"):
+        print("Cancelled.")
+        return
+
+    result = run_conwrt_capture(["discover"])
+    if result is None:
+        return
+
+    if result.stdout.strip():
+        print(result.stdout, end="")
+    if result.stderr.strip():
+        print(result.stderr, end="")
+    if result.returncode != 0:
+        warning(f"(discover exited with code {result.returncode})")
+    else:
+        success("\nSubnet scan complete.")
+        print(dim("Pick an IP above and use menu item 4 (Fingerprint) to identify it."))
+
+
 def action_quit() -> bool:
-    """Item 11 -- quit. Returns True to signal main loop to exit."""
+    """Item 12 -- quit. Returns True to signal main loop to exit."""
     print(f"\n{Color.CYAN}Goodbye. Stay safe out there.{Color.RESET}\n")
     return True
 
@@ -406,12 +436,13 @@ MENU_ITEMS: list[tuple[str, str, str]] = [
     ("3", "Probe interface for routers", "(find what's connected)"),
     ("4", "Fingerprint a device", "(SSH identify)"),
     ("5", "Auto-detect connected router", "(passive scan)"),
-    ("6", "Preview flash plan", "(dry-run)"),
-    ("7", "Preview configure plan", "(dry-run)"),
-    ("8", "Show device inventory", ""),
-    ("9", "Show cached firmware", ""),
-    ("10", "Help / About", ""),
-    ("11", "Quit", ""),
+    ("6", "Scan subnet for routers", "(nmap + MAC OUI)"),
+    ("7", "Preview flash plan", "(dry-run)"),
+    ("8", "Preview configure plan", "(dry-run)"),
+    ("9", "Show device inventory", ""),
+    ("10", "Show cached firmware", ""),
+    ("11", "Help / About", ""),
+    ("12", "Quit", ""),
 ]
 
 
@@ -437,17 +468,18 @@ def handle_choice(choice: str) -> bool:
         "3": action_probe,
         "4": action_fingerprint,
         "5": action_auto_detect,
-        "6": action_flash_preview,
-        "7": action_configure_preview,
-        "8": action_inventory,
-        "9": action_cached_firmware,
-        "10": action_help,
+        "6": action_discover,
+        "7": action_flash_preview,
+        "8": action_configure_preview,
+        "9": action_inventory,
+        "10": action_cached_firmware,
+        "11": action_help,
     }
-    if choice == "11":
+    if choice == "12":
         return action_quit()
     handler = actions.get(choice)
     if handler is None:
-        warning(f"Unknown option: {choice!r}. Enter a number 1-11.")
+        warning(f"Unknown option: {choice!r}. Enter a number 1-12.")
         return False
     try:
         handler()

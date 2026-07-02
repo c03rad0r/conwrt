@@ -36,7 +36,7 @@ from conwrt.cli import _build_parser  # noqa: E402
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] not in (
         "flash", "list", "list-use-cases", "cache", "setup-mgmt-wifi", "backup",
-        "auto", "setup-nor-recovery", "configure", "profile", "fingerprint", "reset",
+        "auto", "discover", "setup-nor-recovery", "configure", "profile", "fingerprint", "reset",
         "probe", "flow", "lan-migrate", "-h", "--help", "--version", "-V",
     ):
         sys.argv.insert(1, "flash")
@@ -68,6 +68,7 @@ def main() -> int:
         "configure": ("conwrt.commands_configure", "cmd_configure"),
         "backup": ("conwrt.cmd_backup", "cmd_backup"),
         "auto": ("conwrt.cmd_detect", "cmd_auto"),
+        "discover": ("conwrt.cmd_discover", "cmd_discover"),
         "fingerprint": ("conwrt.cmd_detect", "cmd_fingerprint"),
         "setup-nor-recovery": ("conwrt.cmd_nor_recovery", "cmd_setup_nor_recovery"),
         "reset": ("conwrt.cmd_reset", "cmd_reset"),

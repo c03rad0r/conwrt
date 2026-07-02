@@ -137,6 +137,25 @@ def _build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--no-menu", action="store_true",
         help="Print detection results and exit (non-interactive)")
 
+    discover_parser = subparsers.add_parser("discover",
+        help="Scan the local subnet (nmap + ARP + MAC OUI) and list likely routers")
+    discover_parser.add_argument("--subnet", default=None,
+        help="CIDR to scan (e.g. 192.168.1.0/24). Auto-detected if omitted.")
+    discover_parser.add_argument("--interface", default=None,
+        help="Restrict subnet auto-detection to this interface.")
+    discover_parser.add_argument("--ports", default="22,23,80,443,8080,8081",
+        help="Comma-separated ports to probe.")
+    discover_parser.add_argument("--timeout", type=int, default=60,
+        help="Overall scan budget in seconds (default 60).")
+    discover_parser.add_argument("--json", action="store_true", dest="json_output",
+        help="Output dropdown-ready JSON.")
+    discover_parser.add_argument("--no-enrich", action="store_true",
+        help="Skip HTTP title / SSH banner enrichment (faster).")
+    discover_parser.add_argument("--min-score", type=int, default=0,
+        help="Only show routers scoring >= this (0-100).")
+    discover_parser.add_argument("--no-nmap", action="store_true",
+        help="Force ARP/ping fallback instead of nmap.")
+
     nor_parser = subparsers.add_parser("setup-nor-recovery",
         help="Set up NOR flash as recovery partition on dual-flash devices (e.g. GL.iNet AR300M)")
     nor_parser.add_argument("--model-id", required=True,
