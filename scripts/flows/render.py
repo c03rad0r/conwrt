@@ -8,6 +8,7 @@ shell and Markdown transports cannot drift.
 """
 from __future__ import annotations
 
+import base64
 import os
 from typing import Any
 
@@ -91,19 +92,30 @@ def _apply_use_case_ops(step: Step) -> list[Op]:
 
 
 def _password_ops() -> list[Op]:
+    # BusyBox has no `chpasswd`; generate an alphanumeric password on-device and
+    # feed it twice to `passwd root` (new password + confirmation). Mirrors the
+    # proven `_password_firstboot` pattern in profile/builder.py.
     return [
         Comment("set a random root password (printed once)"),
         ShellCommand(
             command="PW=$(cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 16) "
-            "&& echo \"root:$PW\" | chpasswd && echo \"root password: $PW\""
+            "&& printf '%s\\n%s\\n' \"$PW\" \"$PW\" | passwd root "
+            "&& echo \"root password: $PW\""
         ),
     ]
 
 
 def _set_password_ops(step: Step) -> list[Op]:
+    # BusyBox has no `chpasswd`. Base64-encode the chosen password so arbitrary
+    # characters (quotes, $, etc.) survive the SSH heredoc, then decode on-device
+    # and feed twice to `passwd root`. Identical to profile/builder.py.
+    pw_b64 = base64.b64encode(step.password.encode()).decode()
     return [
         Comment("set root password"),
-        ShellCommand(command=f"echo 'root:{step.password}' | chpasswd"),
+        ShellCommand(
+            command=f"printf '%s\\n%s\\n' \"$(echo '{pw_b64}' | base64 -d)\" "
+            f"\"$(echo '{pw_b64}' | base64 -d)\" | passwd root"
+        ),
     ]
 
 
