@@ -42,10 +42,11 @@ def test_set_lan_ip_step_skipped_when_model_has_no_subnet():
     assert "skip LAN move" in script
 
 
-def test_password_step_renders_chpasswd():
+def test_password_step_renders_passwd_root():
     flow = Flow(name="pw", description="", steps=[Step(kind="password", title="Set a random root password")])
     script = render_flow_shell(flow, load_model("dlink-covr-x1860-a1"), {}, version="24.10.7")
-    assert "chpasswd" in script
+    assert "passwd root" in script
+    assert "chpasswd" not in script
     assert "root password: $PW" in script
     assert "ssh root@$IP sh <<'CONWRT_EOF'" in script
 
@@ -58,11 +59,17 @@ def test_tollgate_flow_renders_without_portal():
     assert "configurationwizzard" not in script
 
 
-def test_set_password_step_renders_chpasswd_with_value():
+def test_set_password_step_renders_passwd_root_with_value():
     flow = Flow(name="sp", description="",
                 steps=[Step(kind="set_password", title="Set root password", password="s3cr3t")])
     script = render_flow_shell(flow, load_model("dlink-covr-x1860-a1"), {}, version="24.10.7")
-    assert "echo 'root:s3cr3t' | chpasswd" in script
+    # BusyBox-safe: password is base64-encoded and fed to `passwd root`, never
+    # `chpasswd` (absent on OpenWrt) and never interpolated raw (shell-safe).
+    assert "passwd root" in script
+    assert "chpasswd" not in script
+    import base64
+    assert base64.b64encode(b"s3cr3t").decode() in script
+    assert "s3cr3t" not in script  # raw value must not leak into the shell heredoc
 
 
 def test_hostname_step_renders_uci_and_proc():
